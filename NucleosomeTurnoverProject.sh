@@ -622,7 +622,7 @@ Rscript /rd1/user/liym/NTR/scripts/NTR.R -i=enhancers.TFnum.H2BGFP.tsv -s=4 -e=9
 paste enhancers.TFnum.bed3+ <(cut -f10 enhancers.TFnum.NTR.tsv) >enhancers.TFnum.NTR.final.tsv
 ####TF signals
 ls ../*.signal.bw |sed 's/.signal.bw//'|sed 's;../;;'|while read file;do bwtool summary enhancers.TFnum.bed3+ ../${file}.signal.bw enhancers.TFnum.${file}.signal.tsv;done;
-paste *TFnum*signal.tsv |cut -f1-3,8,17,16,25|bedtools intersect -wo -a stdin -b enhancers.TFnum.NTR.final.tsv|awk -v OFS="\t" '{print $1,$2,$3,$4,$5,$6,$7,$11,$12}' >enhancers.TFnum.allTFsignal.NTR.tsv
+paste *TFnum*signal.tsv |cut -f1-3,8,17,26,35|bedtools intersect -wo -a stdin -b enhancers.TFnum.NTR.final.tsv|awk -v OFS="\t" '{print $1,$2,$3,$4,$5,$6,$7,$11,$12}' >enhancers.TFnum.allTFsignal.NTR.tsv
 ####Intergenic regions 
 /rd1/user/liym/NTR/scripts/FileForNTR.sh /rd1/user/liym/NTR/data/mm10.refGene.intergenic.1kb.bed3 ../week0.bw ../week1.bw ../week2.bw ../week4.bw ../week6.bw ../week8.bw mm10.refGene.intergenic.1kb.H2BGFP.tsv
 grep -v "NA" mm10.refGene.intergenic.1kb.H2BGFP.tsv >tmp;mv tmp mm10.refGene.intergenic.1kb.H2BGFP.tsv
@@ -816,4 +816,355 @@ ls ls /rd1/user/liym/NTR/ChIP-seq/others/data/*.bed3|grep -v "BlackList"|while r
         awk -v OFS="\t" '{print $0,$4-($7+$8)/2,($5+$6)/2-($9+$10)/2}' ${prefix}.H2BGFP.sum.tsv >${prefix}.kd.wt.NTR.tsv;
 done;
 
+#Circulation Research Revision1(201812) 
+##1 Different intervals for genomic annotation and GO analysis
+bedtools subtract -a /rd1/user/liym/NTR/data/mm10.chrSize.bed3 -b /rd1/user/liym/NTR/data/mm10.gap.bed4+ |perl /mnt/share/liym/bin/bedToIntervals.pl -l 2000 -d 2000 >mm10.2kbIntervals.filterGap.bed
+bedtools subtract -a /rd1/user/liym/NTR/data/mm10.chrSize.bed3 -b /rd1/user/liym/NTR/data/mm10.gap.bed4+ |perl /mnt/share/liym/bin/bedToIntervals.pl -l 3000 -d 3000 >mm10.3kbIntervals.filterGap.bed
+dataPath=/rd1/user/liym/NTR/H2BGFP_All/figures/fig1
+ls *bed|while read file;do
+ prefix=$(echo $file|sed 's/.filterGap.bed//');
+ sh /rd1/user/liym/NTR/scripts/FileForNTR.sh $file ${dataPath}/week0-new.bw ${dataPath}/week1.bw ${dataPath}/week2.bw ${dataPath}/week4.bw ${dataPath}/week6.bw ${dataPath}/week8.bw ${prefix}.H2BGFP.tsv 
+ done;
+ls *H2BGFP.tsv |while read file;do
+ grep -v "NA" $file >tmp;mv tmp $file;
+ prefix=$(echo $file|sed 's/.H2BGFP.tsv//');
+ Rscript /rd1/user/liym/NTR/scripts/NTR.R -i=$file -p=0.0001 -s=4 -e=9 -o=${prefix}.NTR.tsv &
+ done;
+ls *NTR.tsv |while read file;do
+ prefix=$(echo $file|sed 's/.NTR.tsv//');
+ awk '$11<0.05' $file|sort -k10 -g -r |head -n10000 |cut -f1-3 >${prefix}.p0.05.top10k.bed3
+ /home/liym/R/bin/Rscript /mnt/share/liym/bin/PeakAnnoGO.R -i=${prefix}.p0.05.top10k.bed3 -s=mm10 -o=$prefix
+done;
+bedtools random -g /rd1/user/liym/NTR/data/mm10.filterRandom.size -l 2000 -n 10000|cut -f1-3 >random2k.intervals.bed3
+bedtools random -g /rd1/user/liym/NTR/data/mm10.filterRandom.size -l 3000 -n 10000|cut -f1-3 >random3k.intervals.bed3
+ls random*.intervals.bed3|while read file;do
+ prefix=$(echo $file|sed 's/.intervals.bed//');
+ /home/liym/R/bin/Rscript /mnt/share/liym/bin/PeakAnnoGO.R -i=$file -s=mm10 -o=$prefix
+done;
+ls *annotation.tsv|while read file;do
+ prefix=$(echo $file|sed 's/.annotation.tsv//');
+ awk -v FS="\t" '$6~"Promoter"' $file|wc -l >${prefix}.Anno.summary.tsv
+ awk -v FS="\t" '$6~"Exon"' $file|wc -l >>${prefix}.Anno.summary.tsv
+ awk -v FS="\t" '$6~"Intron"' $file|wc -l >>${prefix}.Anno.summary.tsv
+ awk -v FS="\t" '$6~"Downstream"' $file|wc -l >>${prefix}.Anno.summary.tsv
+ awk -v FS="\t" '$6~"Intergenic"' $file|wc -l >>${prefix}.Anno.summary.tsv
+ awk -v FS="\t" '$6~"^5"' $file|wc -l >>${prefix}.Anno.summary.tsv
+ awk -v FS="\t" '$6~"^3"' $file|wc -l >>${prefix}.Anno.summary.tsv
+done;
+ls *summary.tsv |while read file;do 
+ paste rowName.txt $file >tmp;mv tmp $file;
+done;
+
+##2 TF control
+###Download data from GSE90893 using prefetch
+cd TF_ChIP-seq
+mv SRR5077735.sra ESC_Nanog_ChIP.sra
+mv SRR5077690.sra ESC_Oct4_ChIP.sra
+mv SRR5077691.sra ESC_Sox2_ChIP.sra
+mv SRR5077675.sra ESC_WCE_input.sra
+fqAdapterFilter.pl -a GATCGGAAGAGCACACGTCTGAACTCCAGTCACAGTTCCGTATCTCGTATG -i ESC_Nanog_ChIP.fastq -o ESC_Nanog_ChIP.SRR5077735.adaF.fq -r ESC_Nanog_ChIP.SRR5077735.adaF.log
+fqAdapterFilter.pl -a GATCGGAAGAGCACACGTCTGAACTCCAGTCACTGACCAATCTCGTATGC,GATCGGAAGAGCACACGTCTGAACTCCAGTCACCTTGTAATCTCGTATGC,GATCGGAAGAGCACAAGTCTGAACTCCAGTCACTGACCAATCTCGTATGC -i ESC_Oct4_ChIP.fastq -o ESC_Oct4_ChIP.SRR5077690.adaF.fq -r ESC_Oct4_ChIP.SRR5077690.adaF.log 
+fqAdapterFilter.pl -a GATCGGAAGAGCACACGTCTGAACTCCAGTCACCTTGTAATCTCGTATGC -i ESC_Sox2_ChIP.fastq -o ESC_Sox2_ChIP.SRR5077691.adaF.fq -r ESC_Sox2_ChIP.SRR5077691.adaF.log 
+perl /mnt/share/liym/bin/rnaSeq_zhangsj/fqSeFilter.pl -f 1.0 -b N -l 50 -a 20 -q 0.5 -c 20 ESC_WCE_input.fastq >ESC_WCE_input.SRR5077675.filter.fq 2>ESC_WCE_input.SRR5077675.filter.log
+ls *.fq|while read file;do 
+    prefix=$(echo $file|cut -f1-2 -d '.');
+    mkdir $prefix;
+    cd $prefix;
+    bwa aln -t 5 /mnt/share/liym/data/bwa/mm10/mm10.fa ../$file >${prefix}.out.sai 2>${prefix}.aln.log;
+    bwa samse /mnt/share/liym/data/bwa/mm10/mm10.fa ${prefix}.out.sai ../$file 2>${prefix}.samse.log |samtools view -bSu -| /home/liym/.local/bin/samtools sort -@ 5 -o ${prefix}.out.sorted.bam - ;
+    bamtools filter -in ${prefix}.out.sorted.bam -out ${prefix}.uniq.sorted.bam -script /mnt/share/liym/data/bwa/bwaAln.filter.json 2>${prefix}.bamtoolsFilter.log
+    bamtools stats -in ${prefix}.uniq.sorted.bam >${prefix}.uniq.sorted.bamStats
+    samtools rmdup -s ${prefix}.uniq.sorted.bam ${prefix}.final.rmDup.bam 2>${prefix}.rmDup.log;
+    cd ../;
+done;
+ls */*ChIP*final.rmDup.bam|while read file;do
+ prefix=$(dirname $file);
+ export macs2Args="-f BAM -g mm -n $prefix"; 
+ sh /mnt/share/liym/bin/runChIPseq.sh -o $prefix -p $prefix -r $file -c ESC_WCE_input.SRR5077675/ESC_WCE_input.SRR5077675.final.rmDup.bam -t 5 >${prefix}/${prefix}.runChIPseq.log 2>${prefix}/${prefix}.runChIPseq.err;
+ done;
+ls */macs2/*narrowPeak|while read file;do prefix=$(echo $file|cut -f1 -d '/');awk '$7>4 && $9>3' $file >${prefix}.narrowPeak;done;
+cd ../
+cat TF_ChIP-seq/*narrowPeak|cut -f1-3|bedtools intersect -a stdin -b /rd1/user/liym/NTR/H2BGFP_All/figures/fig3/TFs.sum.bed3 -v|bedtools intersect -a /rd1/user/liym/NTR/H2BGFP_All/figures/fig2/enhancers.pol2.status.NTR.tsv -b stdin -wao >enhancers.TFs.intersect.bed
+awk '$7>0' enhancers.TFs.intersect.bed |awk -v OFS="" -v ORS="" '{print $1"\t";if($2<$7){print $7"\t";}else{print $2"\t"}if($3<$8){print $3"\n"}else{print $8"\n"}}'|awk -v OFS="\t" '{print $1,$2,$3,"wt"}' |sort -k1,1 -k2,2n |bedtools merge >enhancers.TFs.status.bed3+
+/rd1/user/liym/NTR/scripts/FileForNTR.sh enhancers.TFs.status.bed3+ ../../H2BGFP_All/figures/fig1/week0-new.bw ../../H2BGFP_All/figures/fig1/week1.bw ../../H2BGFP_All/figures/fig1/week2.bw ../../H2BGFP_All/figures/fig1/week4.bw ../../H2BGFP_All/figures/fig1/week6.bw ../../H2BGFP_All/figures/fig1/week8.bw enhancers.TFs.wt.H2BGFP.tsv 
+Rscript /rd1/user/liym/NTR/scripts/NTR.R -i=enhancers.TFs.wt.H2BGFP.tsv -s=4 -e=9 -p=0.0001 -o=enhancers.TFs.wt.NTR.tsv 
+awk '$7<0' enhancers.TFs.intersect.bed |cut -f1-3,5|sort|uniq|awk -v OFS="\t" '{print $1,$2,$3,"wo",$4}' >enhancers.TFs.status.NTR.tsv
+awk -v OFS="\t" '{print $1,$2,$3,"wt",$10}' enhancers.TFs.wt.NTR.tsv >>enhancers.TFs.status.NTR.tsv
+###TF number
+ls TF_ChIP-seq/*narrowPeak|sed 's/.narrowPeak//'|while read file;do bedtools intersect -a ${file}.narrowPeak -b /rd1/user/liym/NTR/H2BGFP_All/figures/fig3/TFs.sum.bed3 -v >${file}.rmHeartTF.narrowPeak;done;
+bedtools multiinter -i <(sort -k1,1 -k2,2n /rd1/user/liym/NTR/H2BGFP_All/figures/fig2/enhancers.pol2.status.NTR.tsv) <(sort -k1,1 -k2,2n TF_ChIP-seq/ESC_Nanog_ChIP.SRR5077735.rmHeartTF.narrowPeak) <(sort -k1,1 -k2,2n TF_ChIP-seq/ESC_Oct4_ChIP.SRR5077690.rmHeartTF.narrowPeak) <(sort -k1,1 -k2,2n TF_ChIP-seq/ESC_Sox2_ChIP.SRR5077691.rmHeartTF.narrowPeak)|awk -v OFS="\t" '{if($5~"1" && $5~","){print $1,$2,$3,$4}}' >enhancers.TFnum.bed3+
+/rd1/user/liym/NTR/scripts/FileForNTR.sh enhancers.TFnum.bed3+ ../../H2BGFP_All/figures/fig1/week0-new.bw ../../H2BGFP_All/figures/fig1/week1.bw ../../H2BGFP_All/figures/fig1/week2.bw ../../H2BGFP_All/figures/fig1/week4.bw ../../H2BGFP_All/figures/fig1/week6.bw ../../H2BGFP_All/figures/fig1/week8.bw enhancers.TFnum.H2BGFP.tsv
+Rscript /rd1/user/liym/NTR/scripts/NTR.R -i=enhancers.TFnum.H2BGFP.tsv -s=4 -e=9 -p=0.0001 -o=enhancers.TFnum.NTR.tsv
+paste enhancers.TFnum.bed3+ <(cut -f10 enhancers.TFnum.NTR.tsv) >enhancers.TFnum.NTR.final.tsv
+###TF signals
+ls TF_ChIP-seq/*/*bw |while read file;do prefix=$(echo $file|cut -f2 -d '/');bwtool summary enhancers.TFnum.bed3+ $file enhancers.TFnum.${prefix}.signal.tsv;done;
+paste *TFnum*signal.tsv |cut -f1-3,8,17,26|bedtools intersect -wo -a stdin -b enhancers.TFnum.NTR.final.tsv|awk -v OFS="\t" '{print $1,$2,$3,$4,$5,$6,$10,$11}' >enhancers.TFnum.allTFsignal.NTR.tsv
+###HTR agg for ESC specific TFs 
+ls TF_ChIP-seq/*narrowPeak |while read file;do prefix=$(basename $file|sed 's/.narrowPeak.bed//');computeMatrix reference-point -R $file -S ../../H2BGFP_All/figures/fig1/week0-new.bw ../../H2BGFP_All/figures/fig1/week1.bw ../../H2BGFP_All/figures/fig1/week2.bw ../../H2BGFP_All/figures/fig1/week4.bw ../../H2BGFP_All/figures/fig1/week6.bw ../../H2BGFP_All/figures/fig1/week8.bw -out ${prefix}.H2BGFP.gz --referencePoint center -b 5000 -a 5000 -bs 20 --sortRegions no -p 20 >${prefix}.computeMatrix.log 2>${prefix}.computeMatrix.err;done;
+ls *.H2BGFP.gz|sed 's/.H2BGFP.gz//'|while read file;do 
+        dirName=$(echo $file|cut -f1,2 -d '_');
+ mkdir $dirName;
+ mv ${file}.H2BGFP.gz $dirName;
+ cd $dirName;
+ gunzip ${file}.H2BGFP.gz;
+ sh /rd1/user/liym/NTR/scripts/NTR.for.lines.sh ${file}.H2BGFP $dirName
+ Rscript /mnt/share/liym/bin/columnMean.R -i=${dirName}.summary.NTR.tsv -s=7 -e=506 -o=${dirName}.colMean.NTR.tsv
+ cd ../;
+done;
+paste */*colMean.NTR.tsv >Nanog.Oct4.Sox2.txt 
+sed -n '101,401p' Nanog.Oct4.Sox2.txt |awk -v OFS="\t" 'BEGIN{pos=-3000}{print pos,$0;pos+=20}'|Rscript /mnt/share/liym/bin/lines.R -l="Klf4,Nanog,Oct4,Sox2" -y1=0 -y2=0.6 -x="Distance to peak center(bp)" -y="HTR" -o=Nanog.Oct4.Sox2.agg.pdf 
+
+##3 Fig3D supplement
+dataDir=/rd1/user/liym/NTR/ChIP-seq/others/data
+#Overlap between two set of peaks
+bedtools intersect -wo -a ${dataDir}/H3K27ac.upRegulated.peaks.bed3 -b ${dataDir}/H3K27me3.downRegulated.peaks.bed3 |wc -l #106
+signalDir=/rd1/user/liym/NTR/H2BGFP_All/figures/fig5
+bwFiles=${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep1.bw,${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep2.bw,${signalDir}/3_H2BGFP-CM-week0-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep2.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep2.bw
+#all peaks
+sh /mnt/share/liym/bin/bwMeanForMultiFiles.sh -r ${dataDir}/H3K27ac-WT.peaks.bed3 -b $bwFiles -o H3K27ac-WT.peaks.H2BGFP.tsv 
+sh /mnt/share/liym/bin/bwMeanForMultiFiles.sh -r ${dataDir}/H3K27me3-WT.peaks.bed3 -b ${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep1.bw,${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep2.bw,${signalDir}/3_H2BGFP-CM-week0-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep2.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep2.bw -o H3K27me3-WT.peaks.H2BGFP.tsv
+#random selected regions
+bedtools shuffle -excl /rd1/user/liym/NTR/data/mm10.gap.bed4+ -chrom -i ${dataDir}/H3K27ac.upRegulated.peaks.bed3 -g /mnt/share/liym/data/chr.size/mm10.chrom.sizes >H3K27ac.upRegulated.peaks.shuffle.bed3 
+bedtools shuffle -excl /rd1/user/liym/NTR/data/mm10.gap.bed4+ -chrom -i ${dataDir}/H3K27me3.downRegulated.peaks.bed3 -g /mnt/share/liym/data/chr.size/mm10.chrom.sizes >H3K27me3.downRegulated.peaks.shuffle.bed3 
+sh /mnt/share/liym/bin/bwMeanForMultiFiles.sh -r H3K27ac.upRegulated.peaks.shuffle.bed3 -b ${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep1.bw,${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep2.bw,${signalDir}/3_H2BGFP-CM-week0-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep2.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep2.bw -o H3K27ac.upRegulated.peaks.shuffle.H2BGFP.tsv
+sh /mnt/share/liym/bin/bwMeanForMultiFiles.sh -r H3K27me3.downRegulated.peaks.shuffle.bed3 -b ${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep1.bw,${signalDir}/3_H2BGFP-CM-week0-EEDheto_Rep2.bw,${signalDir}/3_H2BGFP-CM-week0-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDheto_Rep2.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep1.bw,${signalDir}/4_H2BGFP-CM-week4-EEDko_Rep2.bw -o H3K27me3.downRegulated.peaks.shuffle.H2BGFP.tsv
+ls *H2BGFP.tsv|sed 's/.H2BGFP.tsv//'|while read file;do
+ awk -v OFS="\t" '{print $1,$2,$3,($4+$5)/2-($7+$8)/2,$6-($9+$10)/2}' ${file}.H2BGFP.tsv |awk '{print $0"\t"$5-$4}' >${file}.wt.ko.NTRdiff.tsv
+done;
+#EED signals for up-regulated H3K27ac peaks
+computeMatrix reference-point -R ${dataDir}/H3K27ac.upRegulated.peaks.bed3 -S /rd1/user/liym/NTR/ChIP-seq/others/EED/EED.merged.subtract.bw /rd1/user/liym/NTR/ChIP-seq/histoneModif/EEDproject/H3K27ac-WT-AdultCM.merged.subtract.bw -out H3K27ac.upRegulated.peaks.EEDSignals.matrix.gz --referencePoint center --sortRegions no -b 5000 -a 5000 -bs 20 -p 10
+gunzip -k H3K27ac.upRegulated.peaks.EEDSignals.matrix.gz
+Rscript /mnt/share/liym/bin/rescale_linear.R -i=H3K27ac.upRegulated.peaks.EEDSignals.matrix -s=7 -e=1006 -n=0,5 -o=H3K27ac.upRegulated.peaks.EEDSignals.rescale.matrix
+cat <(head -n1 H3K27ac.upRegulated.peaks.EEDSignals.matrix) H3K27ac.upRegulated.peaks.EEDSignals.rescale.matrix >tmp;mv tmp H3K27ac.upRegulated.peaks.EEDSignals.rescale.matrix
+gzip H3K27ac.upRegulated.peaks.EEDSignals.rescale.matrix
+plotHeatmap -m H3K27ac.upRegulated.peaks.EEDSignals.rescale.matrix.gz -out H3K27ac.upRegulated.peaks.EEDSignals.rescale.matrix.pdf --colorMap Blues --sortUsingSamples no --samplesLabel EED H3K27ac --regionsLabel "" --refPointLabel "0" --yAxisLabel "ChIP signals" --xAxisLabel "Peak distance(bp)"
+computeMatrix reference-point -R ${dataDir}/H3K27ac.upRegulated.peaks.bed3 H3K27ac.upRegulated.peaks.shuffle.bed3 -S /rd1/user/liym/NTR/ChIP-seq/others/EED/EED.merged.subtract.bw -out H3K27ac.upRegulated.random.EEDSignals.matrix.gz --referencePoint center --sortRegions no -b 5000 -a 5000 -bs 20 -p 15
+plotHeatmap -m H3K27ac.upRegulated.random.EEDSignals.matrix.gz -out H3K27ac.upRegulated.random.EEDSignals.matrix.pdf --colorMap Blues --sortRegions no --regionsLabel upH3K27ac randomH3K27ac --refPointLabel "0" --yAxisLabel "ChIP signals" --xAxisLabel "Peak distance(bp)"
+gunzip -k H3K27ac.upRegulated.peaks.EEDSignals.matrix.gz
+tail -n 6763 H3K27ac.upRegulated.random.EEDSignals.matrix|Rscript /rd1/user/liym/NTR/mnt/bin/rescale_linear.R -s=6 -e=506 -n=0,5 -o=H3K27ac.random.EEDSignals.rescale.matrix
+head -n1 H3K27ac.upRegulated.random.EEDSignals.matrix >header.tmp #Then edit the header
+cat header.tmp H3K27ac.random.EEDSignals.rescale.matrix>tmp;mv tmp H3K27ac.random.EEDSignals.rescale.matrix
+gzip H3K27ac.random.EEDSignals.rescale.matrix
+plotHeatmap -m H3K27ac.random.EEDSignals.rescale.matrix.gz -out H3K27ac.random.EEDSignals.rescale.matrix.pdf --colorList white,blue --colorNumber 5 --sortRegions no --samplesLabel EED-ChIP --regionsLabel "" --refPointLabel "0" --yAxisLabel "ChIP signals" --xAxisLabel "Peak distance(bp)" --yMin 2.4 --yMax 2.8 
+head -n 6764 H3K27ac.upRegulated.random.EEDSignals.matrix|tail -n 6763 |Rscript /rd1/user/liym/NTR/mnt/bin/rescale_linear.R -s=6 -e=506 -n=0,5 -o=H3K27ac.upRegulated.EEDSignals.rescale.matrix
+head -n1 H3K27ac.upRegulated.random.EEDSignals.matrix >header.tmp #Then edit the header
+cat header.tmp H3K27ac.upRegulated.EEDSignals.rescale.matrix >tmp;mv tmp H3K27ac.upRegulated.EEDSignals.rescale.matrix
+gzip H3K27ac.upRegulated.EEDSignals.rescale.matrix
+plotHeatmap -m H3K27ac.upRegulated.EEDSignals.rescale.matrix.gz -out H3K27ac.upRegulated.EEDSignals.rescale.matrix.pdf --colorList white,blue --colorNumber 5 --sortRegions no --samplesLabel EED-ChIP --regionsLabel "" --refPointLabel "0" --yAxisLabel "ChIP signals" --xAxisLabel "Peak distance(bp)" --yMin 2.4 --yMax 2.8
+#Confident intervals
+#Confiden intervals 
+bwtool agg 5000:5000 ${dataDir}/H3K27ac.upRegulated.peaks.bed3 /rd1/user/liym/NTR/MNase/MNaseSeq-EEDko-EEDhete/MNase-EEDheto.repMean.bw H3K27ac.up.EEDHet.agg.tsv -expanded -header & 
+bwtool agg 5000:5000 ${dataDir}/H3K27ac.upRegulated.peaks.bed3 /rd1/user/liym/NTR/MNase/MNaseSeq-EEDko-EEDhete/MNase-EEDko.repMean.bw H3K27ac.up.EEDko.agg.tsv -expanded -header &
+bwtool agg 5000:5000 ${dataDir}/H3K27me3.downRegulated.peaks.bed3 /rd1/user/liym/NTR/MNase/MNaseSeq-EEDko-EEDhete/MNase-EEDheto.repMean.bw H3K27me3.down.EEDHet.agg.tsv -expanded -header &
+bwtool agg 5000:5000 ${dataDir}/H3K27me3.downRegulated.peaks.bed3 /rd1/user/liym/NTR/MNase/MNaseSeq-EEDko-EEDhete/MNase-EEDko.repMean.bw H3K27me3.down.EEDko.agg.tsv -expanded -header &
+paste <(awk -v OFS="\t" '{print $1,$2,$2-1.96*$7,$2+1.96*$7}' H3K27ac.up.EEDHet.agg.tsv) <(awk -v OFS="\t" '{print $2,$2-1.96*$7,$2+1.96*$7}' H3K27ac.up.EEDko.agg.tsv)|sed -n '2,$p' >H3K27ac.up.EEDHet.ko.withCI.agg.tsv
+paste <(awk -v OFS="\t" '{print $1,$2,$2-1.96*$7,$2+1.96*$7}' H3K27me3.down.EEDHet.agg.tsv) <(awk -v OFS="\t" '{print $2,$2-1.96*$7,$2+1.96*$7}' H3K27me3.down.EEDko.agg.tsv)|sed -n '2,$p' >H3K27me3.down.EEDHet.ko.withCI.agg.tsv
+
+#4 gain of function
+##MNase-seq for nucleosome occupancy change
+mkdir MNase_20190309 && cd MNase_20190309
+mv lib19105_BKDL190799220-1a-1_1.fq.gz MNase.Control.EEDGOF.week0.Rep1.lib19105_1.fq.gz
+mv lib19105_BKDL190799220-1a-1_2.fq.gz MNase.Control.EEDGOF.week0.Rep1.lib19105_2.fq.gz
+mv lib19106_BKDL190799220-1a-2_1.fq.gz MNase.Control.EEDGOF.week0.Rep2.lib19106_1.fq.gz
+mv lib19106_BKDL190799220-1a-2_2.fq.gz MNase.Control.EEDGOF.week0.Rep2.lib19106_2.fq.gz
+mv lib19107_BKDL190799220-1a-3_1.fq.gz MNase.Control.EEDGOF.week0.Rep3.lib19107_1.fq.gz
+mv lib19107_BKDL190799220-1a-3_2.fq.gz MNase.Control.EEDGOF.week0.Rep3.lib19107_2.fq.gz
+mv lib19108_BKDL190799220-1a-4_1.fq.gz MNase.GOF.EEDGOF.week0.Rep1.lib19108_1.fq.gz
+mv lib19108_BKDL190799220-1a-4_2.fq.gz MNase.GOF.EEDGOF.week0.Rep1.lib19108_2.fq.gz
+mv lib19109_BKDL190799220-1a-5_1.fq.gz MNase.GOF.EEDGOF.week0.Rep2.lib19109_1.fq.gz
+mv lib19109_BKDL190799220-1a-5_2.fq.gz MNase.GOF.EEDGOF.week0.Rep2.lib19109_2.fq.gz
+mv lib19110_BKDL190799220-1a-6_1.fq.gz MNase.GOF.EEDGOF.week0.Rep3.lib19110_1.fq.gz
+mv lib19110_BKDL190799220-1a-6_2.fq.gz MNase.GOF.EEDGOF.week0.Rep3.lib19110_2.fq.gz
+ls *_1.fq.gz|while read file;do
+ prefix=$(echo $file|sed 's/_1.fq.gz//');
+ mkdir $prefix;
+ cd $prefix;
+ if [ ! -d log ];then
+     mkdir log
+ fi
+ trim_galore -q 20 --fastqc --illumina --stringency 6 -e 0 --gzip --length 50 --trim-n --paired ../${prefix}_1.fq.gz ../${prefix}_2.fq.gz >log/${prefix}_trim.log 2>log/${prefix}_trim.err
+ bwa mem -t 20 /rd1/user/liym/NTR/mnt/data/bwa/mm10.filterRandom.fa ${prefix}_1_val_1.fq.gz ${prefix}_2_val_2.fq.gz 2>${prefix}.bwa.log |samtools view -@ 10 -bSu - |/home/liym/.local/bin/samtools sort -@ 10 -o ${prefix}.out.sorted.bam -;
+ bamtools filter -in ${prefix}.out.sorted.bam -out ${prefix}.filtered.sorted.bam -script /rd1/user/liym/NTR/mnt/data/bwa/bwaMem.filter.json 2>${prefix}.bamtoolsFilter.log;
+ samtools view ${prefix}.filtered.sorted.bam |grep -E "SA|XA" |cut -f1 >multAligName.txt;
+ bamtools stats -insert -in ${prefix}.filtered.sorted.bam >${prefix}.filtered.sorted.bamStats & 
+ perl /rd1/user/liym/NTR/mnt/bin/bam_filterByReadname.pl -i ${prefix}.filtered.sorted.bam -r multAligName.txt |samtools view -@ 20 -bSu - |/home/liym/.local/bin/samtools sort -@ 20 -o ${prefix}.filtered.uniq.bam -
+ bamtools stats -insert -in ${prefix}.filtered.uniq.bam >${prefix}.filtered.uniq.bamStats &
+        java -jar /rd1/user/liym/tools/picard-2.17.6/picard.jar MarkDuplicates I=${prefix}.filtered.uniq.bam O=${prefix}.markDup.final.bam M=${prefix}.markDup.metrix.txt REMOVE_DUPLICATES=true >${prefix}.markDup.log 2>${prefix}.markDup.err
+ java -jar /rd1/user/liym/tools/picard-2.17.6/picard.jar CollectGcBiasMetrics I=${prefix}.markDup.final.bam O=${prefix}.GCbias.metrix.txt CHART=${prefix}.GCbias.metrix.pdf S=${prefix}.GCbias.summary.metrix.txt R=/rd1/user/liym/NTR/mnt/data/bwa/mm10.filterRandom.fa > ${prefix}.GCbias.log 2> ${prefix}.GCbias.err
+ java -jar /rd1/user/liym/tools/picard-2.17.6/picard.jar CollectInsertSizeMetrics I=${prefix}.markDup.final.bam O=${prefix}_insert_size_metrics.txt H=${prefix}_insert_size_histogram.pdf >${prefix}.collectInsertS.log 2>${prefix}.collectInsertS.err
+ perl /rd1/user/liym/NTR/mnt/bin/peReadsFragmentMid.pl -i ${prefix}.markDup.final.bam -f 147,147 >n147_mid.txt
+ perl /rd1/user/liym/NTR/mnt/bin/region_dinucleotideFreq.pl -b n147_mid.txt -n AA,AT,TA,TT -u -150 -d 150 -f /rd1/user/liym/NTR/mnt/data/bwa/mm10.filterRandom.fa -c >AT_freq.tsv 2>AT_freq.log &
+ perl /rd1/user/liym/NTR/mnt/bin/region_dinucleotideFreq.pl -b n147_mid.txt -n GG,GC,CG,CC -u -150 -d 150 -f /rd1/user/liym/NTR/mnt/data/bwa/mm10.filterRandom.fa -c >GC_freq.tsv 2>GC_freq.log
+ if [ -s AT_freq.tsv && -s GC_freq.tsv ];then
+ /rd1/user/liym/NTR/mnt/bin/dinucleotide_plot.R AT_freq.tsv GC_freq.tsv ${prefix}.dinucleotide.pdf 2>log/dinucleotide_R.log
+ fi
+ cd ../;
+done;
+ls -d */|sed 's;/;;'|while read dir;do
+ cd $dir;
+ /rd1/user/liym/tools/danpos-2.2.2/danpos.py dpos ${dir}.markDup.final.bam -c 10000000 --extend 74 -m 1 -o danposRst >danpos2.log 2>danpos2.err &
+ cd ../;
+done;
+ls */*/*/*wig|sed 's/.wig//'|while read file;do
+ wigToBigWig -clip ${file}.wig /rd1/user/liym/NTR/mnt/data/chr.size/mm10.filterRandom.size ${file}.bw 2>wigTobw.log &
+done;
+#Mean nucleosome occupancy of replicates 
+/rd1/user/liym/tools/java-genomics-toolkit-master/toolRunner.sh wigmath.Average -f --step 20 -p 5 -o MNase-Control.repMean.wig MNase.Control.EEDGOF.week0.Rep1.lib19105/danposRst/pooled/*wig MNase.Control.EEDGOF.week0.Rep2.lib19106/danposRst/pooled/*wig MNase.Control.EEDGOF.week0.Rep3.lib19107/danposRst/pooled/*wig >MNase-Control.wigrepMean.log 2>MNase-Control.wigrepMean.err 
+/rd1/user/liym/tools/java-genomics-toolkit-master/toolRunner.sh wigmath.Average -f --step 20 -p 5 -o MNase-EEDGOF.repMean.wig MNase.GOF.EEDGOF.week0.Rep1.lib19108/danposRst/pooled/*wig MNase.GOF.EEDGOF.week0.Rep2.lib19109/danposRst/pooled/*wig MNase.GOF.EEDGOF.week0.Rep3.lib19110/danposRst/pooled/*wig >MNase-EEDGOF.wigrepMean.log 2>MNase-EEDGOF.wigrepMean.err
+wigToBigWig -clip MNase-Control.repMean.wig /rd1/user/liym/NTR/mnt/data/chr.size/mm10.filterRandom.size MNase-Control.repMean.bw 2>> wigTobw.log
+wigToBigWig -clip MNase-EEDGOF.repMean.wig /rd1/user/liym/NTR/mnt/data/chr.size/mm10.filterRandom.size MNase-EEDGOF.repMean.bw 2>> wigTobw.log
+mkdir result && cd result
+bwFile=../MNase.Control.EEDGOF.week0.Rep1.lib19105/danposRst/pooled/MNase.Control.EEDGOF.week0.Rep1.lib19105.markDup.final.Fnor.smooth.bw,../MNase.Control.EEDGOF.week0.Rep2.lib19106/danposRst/pooled/MNase.Control.EEDGOF.week0.Rep2.lib19106.markDup.final.Fnor.smooth.bw,../MNase.Control.EEDGOF.week0.Rep3.lib19107/danposRst/pooled/MNase.Control.EEDGOF.week0.Rep3.lib19107.markDup.final.Fnor.smooth.bw,../MNase.GOF.EEDGOF.week0.Rep1.lib19108/danposRst/pooled/MNase.GOF.EEDGOF.week0.Rep1.lib19108.markDup.final.Fnor.smooth.bw,../MNase.GOF.EEDGOF.week0.Rep2.lib19109/danposRst/pooled/MNase.GOF.EEDGOF.week0.Rep2.lib19109.markDup.final.Fnor.smooth.bw,../MNase.GOF.EEDGOF.week0.Rep3.lib19110/danposRst/pooled/MNase.GOF.EEDGOF.week0.Rep3.lib19110.markDup.final.Fnor.smooth.bw
+sh /rd1/user/liym/NTR/mnt/bin/TSSprofile_bwtool.sh -u 2000 -d 2000 -g /rd1/user/liym/NTR/data/mm10.refGene.filterRandom.gpe -b $bwFile -o MNase.Control.GOF.TSS.agg.txt
+Rscript /rd1/user/liym/NTR/mnt/bin/lines.R -i=MNase.Control.GOF.TSS.agg.txt -x="Distance to TSS(bp)" -y="Nulceosome density" -l="Control_lib19105,Control_lib19106,Control_lib19107,GOF_lib19108,GOF_lib19109,GOF_lib19110" -c="brown,red,pink,darkblue,blue,lightblue" -o=MNase.Control.GOF.TSS.agg.pdf
+bwtool agg 5000:5000 /rd1/user/liym/NTR/ChIP-seq/others/data/H3K27ac.upRegulated.peaks.bed3 $bwFile H3K27ac.up.Control.GOF.NCagg.txt
+bwtool agg 5000:5000 /rd1/user/liym/NTR/ChIP-seq/others/data/H3K27me3.downRegulated.peaks.bed3 $bwFile H3K27me3.down.Control.GOF.NCagg.txt
+ls *NCagg.txt|while read file;do
+ prefix=$(echo $file|sed 's/.NCagg.txt//');
+ Rscript /rd1/user/liym/NTR/mnt/bin/normalizedByColMeans.R -i=$file -s=2 -e=7 -o=${prefix}.NCagg.colMean.txt
+ awk -v OFS="\t" '{print $1,($8+$9+$10)/3,($11+$12+$13)/3}' ${prefix}.NCagg.colMean.txt|Rscript /rd1/user/liym/NTR/mnt/bin/lines.R -y1=0.8 -y2=2 -x="Distance to peak center(bp)" -y="Nulceosome density" -l="Control,GOF" -c="red,blue" -o=${prefix}.NCagg.colMean.pdf
+ cut -f1,8- ${prefix}.NCagg.colMean.txt|Rscript /rd1/user/liym/NTR/mnt/bin/lines.R -y1=0.8 -y2=2.5 -x="Distance to peak center(bp)" -y="Nulceosome density" -l="Control_lib19105,Control_lib19106,Control_lib19107,GOF_lib19108,GOF_lib19109,GOF_lib19110" -c="brown,red,pink,darkblue,blue,lightblue" -o=${prefix}.NCagg.colMean.rep.pdf
+ done;
+#Confidence intervals
+dataDir=/rd1/user/liym/NTR/ChIP-seq/others/data
+bwtool agg 5000:5000 ${dataDir}/H3K27ac.upRegulated.peaks.bed3 ../MNase-Control.repMean.bw H3K27ac.up.Control.agg.tsv -expanded -header &
+bwtool agg 5000:5000 ${dataDir}/H3K27ac.upRegulated.peaks.bed3 ../MNase-EEDGOF.repMean.bw H3K27ac.up.EEDGOF.agg.tsv -expanded -header &
+bwtool agg 5000:5000 ${dataDir}/H3K27me3.downRegulated.peaks.bed3 ../MNase-Control.repMean.bw H3K27me3.down.Control.agg.tsv -expanded -header &
+bwtool agg 5000:5000 ${dataDir}/H3K27me3.downRegulated.peaks.bed3 ../MNase-EEDGOF.repMean.bw H3K27me3.down.EEDGOF.agg.tsv -expanded -header &
+paste <(awk -v OFS="\t" '{print $1,$2,$2-1.96*$7,$2+1.96*$7}' H3K27ac.up.Control.agg.tsv) <(awk -v OFS="\t" '{print $2,$2-1.96*$7,$2+1.96*$7}' H3K27ac.up.EEDGOF.agg.tsv)|sed -n '2,$p' >H3K27ac.up.Control.EEDGOF.withCI.agg.tsv
+paste <(awk -v OFS="\t" '{print $1,$2,$2-1.96*$7,$2+1.96*$7}' H3K27me3.down.Control.agg.tsv) <(awk -v OFS="\t" '{print $2,$2-1.96*$7,$2+1.96*$7}' H3K27me3.down.EEDGOF.agg.tsv)|sed -n '2,$p' >H3K27me3.down.Control.EEDGOF.withCI.agg.tsv
+
+##EEDGOF_P1
+mv lib1957_BKDL190797068-1a-19_1.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957_1.fq.gz
+mv lib1957_BKDL190797068-1a-19_2.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957_2.fq.gz
+mv lib1958_BKDL190797068-1a-20_1.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958_1.fq.gz
+mv lib1958_BKDL190797068-1a-20_2.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958_2.fq.gz
+mv lib1959_BKDL190797068-1a-21_1.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959_1.fq.gz
+mv lib1959_BKDL190797068-1a-21_2.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959_2.fq.gz
+mv lib1960_BKDL190797068-1a-22_1.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960_1.fq.gz
+mv lib1960_BKDL190797068-1a-22_2.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960_2.fq.gz
+mv lib1961_BKDL190797068-1a-23_1.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961_1.fq.gz
+mv lib1961_BKDL190797068-1a-23_2.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961_2.fq.gz
+mv lib1962_BKDL190797068-1a-25_1.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962_1.fq.gz
+mv lib1962_BKDL190797068-1a-25_2.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962_2.fq.gz
+mv lib1963_BKDL190797068-1a-27_1.fq.gz Input.Control.EEDGOFP1.week0.lib1963_1.fq.gz
+mv lib1963_BKDL190797068-1a-27_2.fq.gz Input.Control.EEDGOFP1.week0.lib1963_2.fq.gz
+mv lib1964_BKDL190797068-1a-1_1.fq.gz Input.GOF.EEDGOFP1.week0.lib1964_1.fq.gz
+mv lib1964_BKDL190797068-1a-1_2.fq.gz Input.GOF.EEDGOFP1.week0.lib1964_2.fq.gz
+mv lib1965_BKDL190797069-1a-2_1.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965_1.fq.gz
+mv lib1965_BKDL190797069-1a-2_2.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965_2.fq.gz
+mv lib1966_BKDL190797069-1a-3_1.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966_1.fq.gz
+mv lib1966_BKDL190797069-1a-3_2.fq.gz H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966_2.fq.gz
+mv lib1967_BKDL190797069-1a-4_1.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967_1.fq.gz
+mv lib1967_BKDL190797069-1a-4_2.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967_2.fq.gz
+mv lib1968_BKDL190797069-1a-5_1.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968_1.fq.gz
+mv lib1968_BKDL190797069-1a-5_2.fq.gz H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968_2.fq.gz
+mv lib1969_BKDL190797069-1a-6_1.fq.gz Input.Control.EEDGOFP1.week2.lib1969_1.fq.gz
+mv lib1969_BKDL190797069-1a-6_2.fq.gz Input.Control.EEDGOFP1.week2.lib1969_2.fq.gz
+mv lib1970_BKDL190797069-1a-7_1.fq.gz Input.GOF.EEDGOFP1.week2.lib1970_1.fq.gz
+mv lib1970_BKDL190797069-1a-7_2.fq.gz Input.GOF.EEDGOFP1.week2.lib1970_2.fq.gz
+ls *_1.fq.gz|while read file;do
+ prefix=$(echo $file|sed 's/_1.fq.gz//');
+ mkdir $prefix;
+ cd $prefix;
+ fastqc -t 5 -q -o ./ ../${prefix}_1.fq.gz ../${prefix}_2.fq.gz 
+ cd ../;
+done;
+ls *_1.fq.gz|grep -vE "65|66|67|68"|while read file;do
+        filePre=$(echo $file|sed 's/_1.fq.gz//');
+ cd $filePre;
+ if [ ! -d log ];then
+  mkdir log;
+ fi
+ ln -s ../${filePre}_1.fq.gz;
+ ln -s ../${filePre}_2.fq.gz;
+ trim_galore -q 20 --fastqc --illumina --stringency 6 -e 0 --gzip --length 50 --trim-n --paired ${filePre}_1.fq.gz ${filePre}_2.fq.gz >log/${filePre}_trim.log 2>log/${filePre}_trim.err
+ cd ../;
+ done;
+ls -d */|while read file;do
+       prefix=$(echo $file|sed 's;/;;')
+       cd $prefix;
+ if [ -e *_1_val_1.fq.gz ]; then
+     bwa mem -t 15 /rd1/user/liym/NTR/mnt/data/bwa/mm10.filterRandom.fa ../${prefix}_1.fq.gz ../${prefix}_2.fq.gz 2> ${prefix}.bwa.log | samtools view -@ 10 -bSu - | samtools sort -@ 10 -o ${prefix}.out.sorted.bam -;
+ else
+     bwa mem -t 15 /rd1/user/liym/NTR/mnt/data/bwa/mm10.filterRandom.fa ${prefix}_1_val_1.fq.gz ${prefix}_2_val_2.fq.gz 2>${prefix}.bwa.log |samtools view -@ 10 -bSu - |samtools sort -@ 10 -o ${prefix}.out.sorted.bam -;
+ fi
+ bamtools filter -in ${prefix}.out.sorted.bam -out ${prefix}.filtered.sorted.bam -script /rd1/user/liym/NTR/mnt/data/bwa/bwaMem.filter.json 2>${prefix}.bamtoolsFilter.log;
+ samtools view ${prefix}.filtered.sorted.bam |grep -E "SA|XA" |cut -f1 >multAligName.txt;
+ bamtools stats -insert -in ${prefix}.filtered.sorted.bam >${prefix}.filtered.sorted.bamStats & 
+ perl /rd1/user/liym/NTR/mnt/bin/bam_filterByReadname.pl -i ${prefix}.filtered.sorted.bam -r multAligName.txt |samtools view -@ 20 -bSu - |samtools sort -@ 20 -o ${prefix}.filtered.uniq.bam -
+ bamtools stats -insert -in ${prefix}.filtered.uniq.bam >${prefix}.filtered.uniq.bamStats &
+ java -jar /rd1/user/liym/tools/picard-2.17.6/picard.jar MarkDuplicates I=${prefix}.filtered.uniq.bam O=${prefix}.markDup.final.bam M=${prefix}.markDup.metrix.txt REMOVE_DUPLICATES=true >${prefix}.markDup.log 2>${prefix}.markDup.err
+ java -jar /rd1/user/liym/tools/picard-2.17.6/picard.jar CollectGcBiasMetrics I=${prefix}.markDup.final.bam O=${prefix}.GCbias.metrix.txt CHART=${prefix}.GCbias.metrix.pdf S=${prefix}.GCbias.summary.metrix.txt R=/rd1/user/liym/NTR/mnt/data/bwa/mm10.filterRandom.fa > ${prefix}.GCbias.log 2> ${prefix}.GCbias.err
+ java -jar /rd1/user/liym/tools/picard-2.17.6/picard.jar CollectInsertSizeMetrics I=${prefix}.markDup.final.bam O=${prefix}_insert_size_metrics.txt H=${prefix}_insert_size_histogram.pdf >${prefix}.collectInsertS.log 2>${prefix}.collectInsertS.err
+ cd ../;
+done;
+ls */*GCbias.metrix.txt|sed 's/.txt//'|while read file;do  Rscript /mnt/share/liym/bin/picard.GCbiasMetrix.plot.R -i=${file}.txt -y1=0 -y2=4 -o=${file}.inhouse.pdf;done;
+ls *ChIP*/*final.bam|while read file;do
+ dirname=$(dirname $file);
+ prefix=$(echo $dirname|cut -f2-4 -d '.');
+ cd $dirname;
+ /rd1/user/liym/tools/danpos-2.2.2/danpos.py dpos H2BGFP_ChIP.${prefix}.*.markDup.final.bam -b ../Input.${prefix}*/Input.${prefix}*.markDup.final.bam -c 10000000 --extend 74 --paired 1 -o danposRst >danposRst.log 2>danposRst.err 
+ cd ../;
+done;
+ls */danposRst/pooled/*wig|while read file;do prefix=$(echo $file|sed 's/.wig//');wigToBigWig -clip $file /rd1/user/liym/NTR/mnt/data/chr.size/mm10.filterRandom.size ${prefix}.bw 2>wigTobw.log;done;
+#Nucleosome occupancy 
+ls -d *ChIP*/|sed 's;/;;'|while read file;do
+        cd $file;
+ /rd1/user/liym/tools/danpos-2.2.2/danpos.py dpos ${file}.markDup.final.bam -c 10000000 --extend 74 -m 1 -o danposRst >danposRst.coverage.log 2>danposRst.coverage.err
+ cd ../;
+ done;
+mkdir result && cd result
+ls ../*/danposRst/pooled/*ChIP*bw |while read file;do 
+ prefix=$(echo $file|cut -f2 -d '/');
+ ln -s $file ${prefix}.bw 
+done;
+ls *bw|sed 's/.bw//'|while read file;do
+ bwtool summary /rd1/user/liym/NTR/ChIP-seq/others/data/H3K27ac.upRegulated.peaks.bed3 ${file}.bw H3K27ac.up.${file}.txt -skip-median &
+ bwtool summary /rd1/user/liym/NTR/ChIP-seq/others/data/H3K27me3.downRegulated.peaks.bed3 ${file}.bw H3K27me3.down.${file}.txt -skip-median 
+done;
+paste H3K27ac.up.H2BGFP_ChIP.*|awk -v OFS="\t" '{print $1,$2,$3,($8+$16+$24)/3,($32+$40)/2,($48+$56+$64)/3,($72+$80)/2}'|awk -v OFS="\t" '{print $1,$2,$3,$4-$5,$6-$7,($6-$7)-($4-$5)}' >H3K27ac.up.HTR.control.GOF.GOF-Control.tsv 
+paste H3K27me3.down.H2BGFP_ChIP.*|awk -v OFS="\t" '{print $1,$2,$3,($8+$16+$24)/3,($32+$40)/2,($48+$56+$64)/3,($72+$80)/2}'|awk -v OFS="\t" '{print $1,$2,$3,$4-$5,$6-$7,($6-$7)-($4-$5)}' >H3K27me3.down.HTR.control.GOF.GOF-Control.tsv   
+bwFiles=H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966.bw
+dataDir=/rd1/user/liym/NTR/ChIP-seq/others/data
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r ${dataDir}/H3K27ac-WT.peaks.bed3 -b $bwFiles -o H3K27ac-WT.peaks.H2BGFP.tsv 
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r ${dataDir}/H3K27me3-WT.peaks.bed3 -b $bwFiles -o H3K27me3-WT.peaks.H2BGFP.tsv
+bedtools shuffle -excl /rd1/user/liym/NTR/data/mm10.gap.bed4+ -chrom -i ${dataDir}/H3K27ac-WT.peaks.bed3 -g /rd1/user/liym/NTR/mnt/data/chr.size/mm10.filterRandom.size >H3K27ac-WT.peaks.shuffle.bed3 
+bedtools shuffle -excl /rd1/user/liym/NTR/data/mm10.gap.bed4+ -chrom -i ${dataDir}/H3K27me3-WT.peaks.bed3 -g /rd1/user/liym/NTR/mnt/data/chr.size/mm10.filterRandom.size >H3K27me3-WT.peaks.shuffle.bed3 
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r H3K27ac-WT.peaks.shuffle.bed3 -b $bwFiles -o H3K27ac-WT.peaks.shuffle.H2BGFP.tsv                          
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r H3K27me3-WT.peaks.shuffle.bed3 -b $bwFiles -o H3K27me3-WT.peaks.shuffle.H2BGFP.tsv
+
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r ${dataDir}/H3K27ac.unchange.peaks.bed3 -b $bwFiles -o H3K27ac.unchange.peaks.H2BGFP.tsv
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r ${dataDir}/H3K27me3.unchange.peaks.bed3 -b $bwFiles -o H3K27me3.unchange.peaks.H2BGFP.tsv
+
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r ${dataDir}/EEDmerged.peaks.v2.bed3 -b $bwFiles -o EED.peaks.H2BGFP.tsv 
+ls *H2BGFP.tsv|while read file;do
+ prefix=$(echo $file|sed 's/.H2BGFP.tsv//');
+ awk -v OFS="\t" '{print $1,$2,$3,($4+$5+$6)/3-($7+$8)/2,($9+$10+$11)/3-($12+$13)/2}' $file |awk -v OFS="\t" '{print $1,$2,$3,$4,$5,$5-$4}' >${prefix}.control.GOF.HTR.tsv
+ done;
+#Correlations between replicates
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r /rd1/user/liym/NTR/data/mm10.1kbIntervals.filterGap.bed4 -b H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966.bw -o allSamples.1kb.mean.tsv 
+###Begin R
+data<-read.delim(file="allSamples.1kb.mean.tsv",header=F) 
+data<-data[,-c(1:4)]
+colnames(data)<-c("Control_week0_1","Control_week0_2","Control_week0_3","Control_week2_1","Control_week2_2","EEDGOF_week0_1","EEDGOF_week0_2","EEDGOF_week0_3","EEDGOF_week2_1","EEDGOF_week2_2")
+corValue<-cor(data,use="pairwise.complete.obs")
+write.table(corValue,file="allSamples.1kb.mean.pearsonCor.tsv",quote=F,sep="\t")
+corValue<-cor(data,use="pairwise.complete.obs",method="spearman")
+write.table(corValue,file="allSamples.1kb.mean.spearmanCor.tsv",quote=F,sep="\t")
+pdf(file="")
+pheatmap(corValue)
+dev.off()
+###End R
+sh /rd1/user/liym/NTR/mnt/bin/bwMeanForMultiFiles.sh -r /rd1/user/liym/NTR/data/mm10.1kbIntervals.filterGap.bed4 -b ../H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960/danposRst/pooled/H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961/danposRst/pooled/H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962/danposRst/pooled/H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967/danposRst/pooled/H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968/danposRst/pooled/H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957/danposRst/pooled/H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958/danposRst/pooled/H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959/danposRst/pooled/H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965/danposRst/pooled/H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965.markDup.final.Fnor.smooth.bw,../H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966/danposRst/pooled/H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966.markDup.final.Fnor.smooth.bw -o allSamples.1kb.coverage.mean.tsv
+#Tss agg plot
+sh /rd1/user/liym/NTR/mnt/bin/TSSprofile_bwtool.sh -u 2000 -d 2000 -g /rd1/user/liym/NTR/data/mm10.refGene.filterRandom.gpe -b H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966.bw -o TSS.profile.agg.txt 
+Rscript /rd1/user/liym/NTR/mnt/bin/lines.R -i=TSS.profile.agg.txt -x="Distance to gene TSS(bp)" -y="H2BGFP occupancy" -c="#FF0000FF,#FF9900FF,#CCFF00FF,#33FF00FF,#00FF66FF,#00FFFFFF,#0066FFFF,#3300FFFF,#CC00FFFF,#FF0099FF" -l="Control.week0.rep1,Control.week0.rep2,Control.week0.rep3,Control.week2.rep1,Control.week2.rep2,EEDGOF.week0.rep1,EEDGOF.week0.rep2,EEDGOF.week0.rep3,EEDGOF.week2.rep1,EEDGOF.week2.rep2" -o=TSS.profile.agg.pdf
+bwFile=H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep1.lib1960.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep2.lib1961.bw,H2BGFP_ChIP.Control.EEDGOFP1.week0.Rep3.lib1962.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep1.lib1967.bw,H2BGFP_ChIP.Control.EEDGOFP1.week2.Rep2.lib1968.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep1.lib1957.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep2.lib1958.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week0.Rep3.lib1959.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep1.lib1965.bw,H2BGFP_ChIP.GOF.EEDGOFP1.week2.Rep2.lib1966.bw
+bwtool agg 5000:5000 /rd1/user/liym/NTR/ChIP-seq/others/data/H3K27ac.upRegulated.peaks.bed3 $bwFile H3K27ac.up.agg.txt
+bwtool agg 5000:5000 /rd1/user/liym/NTR/ChIP-seq/others/data/H3K27me3.downRegulated.peaks.bed3 $bwFile H3K27me3.down.agg.txt
+ls *H3K27*agg.txt|sed 's/.txt//'|while read file;do
+        Rscript /rd1/user/liym/NTR/mnt/bin/lines.R -i=${file}.txt -x="Distance to peak center(bp)" -y="H2BGFP ChIP signals" -c="pink1,palevioletred1,red,brown,maroon4,lightskyblue,lightsteelblue1,lightblue,darkblue,blue" -l="Control_week0_1,Control_week0_2,Control_week0_3,Control_week2_1,Control_week2_2,EEDGOF_week0_1,EEDGOF_week0_2,EEDGOF_week0_3,EEDGOF_week2_1,EEDGOF_week2_2" -o=${file}.pdf
+ awk -v OFS="\t" '{print $1,($2+$3+$4)/3-($5+$6)/2,($7+$8+$9)/3-($10+$11)/2}' ${file}.txt|Rscript /rd1/user/liym/NTR/mnt/bin/lines.R -x="Distance to peak center(bp)" -y="HTR" -c="red,blue" -l="Control,EEDGOF" -o=${file}.HTR.agg.pdf
+ done;
 
